@@ -1,5 +1,5 @@
 export type OCRLanguage = "ar" | "fr" | "en" | "mixed" | "unknown";
-export type OCRBlockType = "paragraph" | "heading" | "table" | "image" | "unknown";
+export type OCRBlockType = "paragraph" | "heading" | "list" | "table" | "image" | "separator" | "unknown";
 
 export interface BoundingBox {
   x: number;
@@ -47,6 +47,10 @@ export interface OCRBlock {
   polygon?: BoundingBox;
   lines: OCRLine[];
   table?: OCRTable;
+  assetRef?: string;
+  listLevel?: number;
+  isHeader?: boolean;
+  isFooter?: boolean;
 }
 
 export interface OCRPage {
@@ -58,6 +62,8 @@ export interface OCRPage {
   text: string;
   confidence?: number;
   sourceKind: "text-pdf" | "scanned-pdf" | "image" | "mixed-pdf";
+  header?: OCRBlock[];
+  footer?: OCRBlock[];
 }
 
 export interface OCRDocument {
