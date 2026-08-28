@@ -125,8 +125,11 @@ export function userFacingOCRMessage(error: unknown): string {
   const messages: Record<string, string> = {
     UNSUPPORTED_FILE: "نوع الملف غير مدعوم. اختر PDF أو PNG أو JPG أو TIFF أو WEBP.",
     EMPTY_FILE: "الملف فارغ أو تعذر قراءته.",
+    UNREADABLE_IMAGE: "تعذر قراءة الصورة. استخدم صورة أوضح بصيغة PNG أو JPG.",
+    CORRUPT_PDF: "يبدو أن ملف PDF تالف أو محمي. افتحه وأعد حفظه ثم حاول مجددًا.",
     OCR_TIMEOUT: "انتهت مهلة المعالجة. جرّب ملفًا أصغر أو أعد المحاولة.",
-    OCR_SERVICE_ERROR: "تعذر إكمال خدمة OCR الآن. حاول مرة أخرى لاحقًا.",
+    OCR_SERVICE_ERROR: "تعذر إكمال خدمة OCR الآن. تحقق من الاتصال وحاول لاحقًا.",
+    OCR_NETWORK_ERROR: "تعذر الاتصال بخدمة OCR. تحقق من الشبكة ثم أعد المحاولة.",
   };
   return messages[code] ?? "حدث خطأ أثناء معالجة الملف. تحقق من الملف ثم أعد المحاولة.";
 }

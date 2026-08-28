@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assertSupportedFile, classifyPdf, createOCRProvider, DemoOCRProvider, processOCR } from "./ocr";
+import { assertSupportedFile, classifyPdf, createOCRProvider, DemoOCRProvider, processOCR, userFacingOCRMessage } from "./ocr";
+import { preprocessImage } from "./preprocess";
 import { detectLanguage, flattenDocumentText, toPreviewModel, type OCRDocument, type OCRProvider } from "@shared/ocr";
 
 describe("Nawa OCR core", () => {
@@ -41,6 +42,21 @@ describe("Nawa OCR core", () => {
     expect(result.privacy).toEqual({ originalRetained: false, temporaryDataDeleted: true });
     expect(flattenDocumentText(result)).toContain("تجهيز");
     expect(result.pages[0]?.blocks[0]?.confidence).toBeGreaterThan(0);
+  });
+
+  it("maps operational failures to understandable messages", () => {
+    expect(userFacingOCRMessage(new Error("CORRUPT_PDF"))).toContain("PDF");
+    expect(userFacingOCRMessage(new Error("UNREADABLE_IMAGE"))).toContain("الصورة");
+    expect(userFacingOCRMessage(new Error("OCR_NETWORK_ERROR"))).toContain("الاتصال");
+  });
+
+  it("preprocesses a real image buffer without mutating the source", async () => {
+    const source = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    const processed = await preprocessImage(source, "image/png");
+    expect(processed.bytes.length).toBeGreaterThan(0);
+    expect(processed.steps).toContain("normalize-contrast");
+    expect(processed.originalRetained).toBe(false);
+    expect(source.length).toBeGreaterThan(0);
   });
 
   it("keeps the preview model stable across provider outputs", async () => {
