@@ -46,6 +46,14 @@ describe("Word transformation", () => {
     expect(source).toContain("wordProgress.currentPage");
     expect(source).toContain("wordProgress.totalPages");
   });
+  it("orders positioned Arabic blocks by columns from right to left", () => {
+    const plan = buildWordPlan({ ...documentFixture, pages: [{ ...documentFixture.pages[0]!, blocks: [
+      { id: "left-top", type: "paragraph", text: "يسار أعلى", language: "ar", lines: [], polygon: { x: 0.1, y: 0.1, width: 0.25, height: 0.1 } },
+      { id: "right-top", type: "paragraph", text: "يمين أعلى", language: "ar", lines: [], polygon: { x: 0.7, y: 0.1, width: 0.2, height: 0.1 } },
+      { id: "right-bottom", type: "paragraph", text: "يمين أسفل", language: "ar", lines: [], polygon: { x: 0.7, y: 0.3, width: 0.2, height: 0.1 } },
+    ] }] });
+    expect(plan.pages[0]!.paragraphs.map((paragraph) => paragraph.text)).toEqual(["يمين أعلى", "يمين أسفل", "يسار أعلى"]);
+  });
   it("builds ordered Word pages with editable paragraphs and a real table plan", () => {
     const plan = buildWordPlan(documentFixture);
     expect(plan.pages.map((page) => page.pageNumber)).toEqual([1, 2]);

@@ -41,11 +41,18 @@ async function insertIntoOffice(document: OCRDocument, host: Host, excelMode: "s
     await Word.run(async (context: Word.RequestContext) => {
       const body = context.document.body;
       for (const page of plan.pages) {
-        for (const paragraph of page.paragraphs) {
+        for (const paragraph of [...page.header, ...page.paragraphs, ...page.footer]) {
           const item = body.insertParagraph(paragraph.text, Word.InsertLocation.end);
           item.alignment = paragraph.direction === "rtl" ? Word.Alignment.right : Word.Alignment.left;
           item.font.bold = Boolean(paragraph.bold);
           if (paragraph.kind === "heading") item.styleBuiltIn = Word.BuiltInStyleName.heading1;
+          else if (paragraph.kind === "list") item.styleBuiltIn = Word.BuiltInStyleName.listParagraph;
+        }
+        for (const asset of page.assets) {
+          if (asset.kind === "separator") {
+            const separator = body.insertParagraph("────────────────", Word.InsertLocation.end);
+            separator.alignment = Word.Alignment.centered;
+          }
         }
         for (const table of page.tables) {
           if (!table.rows.length || !table.rows[0]?.length) continue;
