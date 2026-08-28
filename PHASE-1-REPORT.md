@@ -77,3 +77,37 @@ pnpm dev
 ## المراجع
 
 [1]: https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/language-support/ocr?view=doc-intel-4.0.0 "Language and locale support for Read and Layout document analysis — Microsoft Learn"
+
+
+# تقرير المرحلة الثانية — Nawa OCR Word
+
+## النطاق
+
+هذه المرحلة محصورة في Word فقط. أضيفت عملية تحويل PDF أو صورة إلى خطة Word قابلة لإعادة البناء، مع زرّين منفصلين PDF → Word وImage → Word وتحويل ذكي. لم يبدأ Excel أو أي مرحلة لاحقة.
+
+## ما نُفّذ
+
+أضيف نموذج `WordDocumentPlan` مستقل عن Office.js، ويشمل صفحات مرتبة، فقرات، عناوين، قوائم، اتجاه RTL/LTR، الثقة، وتحويل الجداول إلى مصفوفات قابلة لإدراج Word. أضيفت معالجة عربية محافظة لا تغيّر النص منخفض الثقة. كما أضيف فحص أولي للملف يعرض النوع وعدد الصفحات التقديري قبل التحويل، وحالة تقدم مرئية أثناء الطلب.
+
+في Word، يستخدم التكامل `Word.run` و`body.insertParagraph` و`body.insertTable` لإنشاء محتوى قابلًا للتحرير، وليس صورة أو PDF مضمّنًا. تُطبّق محاذاة الفقرة والجدول وفق الاتجاه المكتشف، وتُستخدم أنماط Word للعناوين والجداول.
+
+## التحقق
+
+| الفحص | النتيجة |
+|---|---|
+| TypeScript | ناجح |
+| ملفات الاختبار | 3 |
+| الاختبارات | 14 ناجحة، 0 فشل |
+| Build الإنتاج | ناجح |
+| تحقق بصري | ناجح لواجهة Task Pane في المتصفح |
+
+## حدود يجب عدم إخفائها
+
+لا يمكن اعتبار OCR Azure الحقيقي مقاسًا دون مورد Azure ومفتاح صالحين، ولا يمكن اعتبار sideload والإدراج داخل تطبيق Word المكتبي اختبارًا ناجحًا داخل جلسة المتصفح الحالية. مسار PDF النصي/الممسوح/المختلط يعتمد حاليًا على طبقة المزود الموجودة في المرحلة الأولى، بينما إعادة البناء وإدراج Word أصبحت جاهزة برمجيًا. الحفاظ على الصور داخل مواضعها، اكتشاف الأعمدة تلقائيًا، ومعالجة فشل صفحة فعلية دون إسقاط الطلب الكامل تحتاج تكامل مزود حقيقي وملفات benchmark.
+
+> لا توجد أرقام دقة مصطنعة في هذا التقرير؛ القياسات الرقمية المذكورة هي نتائج الاختبارات المحلية فقط وليست Character Accuracy أو Word Accuracy لـ Azure.
+
+## مراجع
+
+[1]: https://learn.microsoft.com/en-us/javascript/api/word/word.table?view=word-js-preview Microsoft Learn — Word.Table class.
+[2]: https://learn.microsoft.com/en-us/javascript/api/word/word.paragraph?view=word-js-preview Microsoft Learn — Word.Paragraph class.

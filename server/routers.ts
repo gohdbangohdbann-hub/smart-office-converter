@@ -2,7 +2,8 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
-import { processOCR, userFacingOCRMessage } from "./ocr";
+import { inspectFile, processOCR, userFacingOCRMessage } from "./ocr";
+import { buildWordPlan } from "@shared/word";
 import { z } from "zod";
 
 const ocrInput = z.object({
@@ -25,6 +26,19 @@ export const appRouter = router({
     process: publicProcedure.input(ocrInput).mutation(async ({ input }) => {
       try {
         return await processOCR(input);
+      } catch (error) {
+        throw new Error(userFacingOCRMessage(error));
+      }
+    }),
+  }),
+  word: router({
+    inspect: publicProcedure.input(ocrInput).mutation(({ input }) => {
+      try { return inspectFile(input); } catch (error) { throw new Error(userFacingOCRMessage(error)); }
+    }),
+    transform: publicProcedure.input(ocrInput).mutation(async ({ input }) => {
+      try {
+        const document = await processOCR(input);
+        return { document, plan: buildWordPlan(document) };
       } catch (error) {
         throw new Error(userFacingOCRMessage(error));
       }

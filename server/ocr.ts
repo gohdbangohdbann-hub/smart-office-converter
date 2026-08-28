@@ -104,6 +104,18 @@ function averageConfidence(values: any[]): number | undefined {
   return scores.length ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(3)) : undefined;
 }
 
+export function inspectFile(request: Pick<OCRRequest, "fileName" | "mimeType" | "bytesBase64">) {
+  assertSupportedFile(request.fileName, request.mimeType);
+  const bytes = Buffer.from(request.bytesBase64, "base64");
+  if (!bytes.length) throw new Error("EMPTY_FILE");
+  const isPdf = request.mimeType === "application/pdf" || request.fileName.toLowerCase().endsWith(".pdf");
+  const sourceKind = isPdf ? classifyPdf(bytes) : "image";
+  const pageCount = isPdf ? Math.max(1, (bytes.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? []).length) : 1;
+  const detectedLanguage = isPdf ? detectLanguage(bytes.toString("utf8")) : "unknown";
+  bytes.fill(0);
+  return { fileName: request.fileName, mimeType: request.mimeType, pageCount, sourceKind, detectedLanguage };
+}
+
 export async function processOCR(request: OCRRequest): Promise<OCRDocument> {
   assertSupportedFile(request.fileName, request.mimeType);
   const bytes = Buffer.from(request.bytesBase64, "base64");
