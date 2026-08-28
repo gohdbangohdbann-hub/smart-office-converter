@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertSupportedFile, classifyPdf, createOCRProvider, DemoOCRProvider, processOCR, userFacingOCRMessage } from "./ocr";
-import { preprocessImage } from "./preprocess";
+import { preprocessImage, preprocessPdf } from "./preprocess";
 import { detectLanguage, flattenDocumentText, toPreviewModel, type OCRDocument, type OCRProvider } from "@shared/ocr";
 
 describe("Nawa OCR core", () => {
@@ -8,6 +8,14 @@ describe("Nawa OCR core", () => {
     expect(() => assertSupportedFile("document.pdf", "application/pdf")).not.toThrow();
     expect(() => assertSupportedFile("scan.webp", "image/webp")).not.toThrow();
     expect(() => assertSupportedFile("notes.txt", "text/plain")).toThrow("UNSUPPORTED_FILE");
+  });
+
+  it("validates PDF preprocessing conservatively and rejects corrupt bytes", () => {
+    const pdf = Buffer.from("%PDF-1.7\n/Type /Page");
+    const result = preprocessPdf(pdf);
+    expect(result.bytes.equals(pdf)).toBe(true);
+    expect(result.steps).toContain("validate-pdf-signature");
+    expect(() => preprocessPdf(Buffer.from("not-a-pdf"))).toThrow("CORRUPT_PDF");
   });
 
   it("classifies text, scanned, and mixed PDF byte signatures", () => {

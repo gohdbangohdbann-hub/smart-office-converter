@@ -24,3 +24,8 @@ export async function preprocessImage(input: Buffer, mimeType: string): Promise<
 }
 
 export function isImageMime(mimeType: string) { return mimeType.startsWith("image/"); }
+export type PreprocessPdfResult = { bytes: Buffer; steps: string[]; originalRetained: false };
+export function preprocessPdf(input: Buffer): PreprocessPdfResult {
+  if (!input.length || input.subarray(0, 5).toString("ascii") !== "%PDF-") throw new Error("CORRUPT_PDF");
+  return { bytes: Buffer.from(input), steps: ["validate-pdf-signature", "preserve-pdf-for-layout-provider"], originalRetained: false };
+}
