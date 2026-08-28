@@ -111,3 +111,9 @@ pnpm dev
 
 [1]: https://learn.microsoft.com/en-us/javascript/api/word/word.table?view=word-js-preview Microsoft Learn — Word.Table class.
 [2]: https://learn.microsoft.com/en-us/javascript/api/word/word.paragraph?view=word-js-preview Microsoft Learn — Word.Paragraph class.
+
+## تحديث متابعة المرحلة الثانية والثالثة
+
+تمت مزامنة `manifest.xml` مع عنوان HTTPS الحالي للمعاينة بدل `localhost`، مع إبقاء ذلك إعدادًا مؤقتًا للتطوير؛ قبل sideload أو النشر النهائي يجب استبداله بعنوان HTTPS ثابت خاص بالبيئة المنشورة والتحقق داخل Word وExcel الفعليين. روابط الأيقونات الخارجية الحالية ما تزال مؤقتة وليست قرار هوية نهائيًا.
+
+أضيف أيضًا اختبار ترتيب القراءة متعدد الأعمدة للكُتل العربية والمختلطة، وأصبح مجموع اختبارات المشروع **26 اختبارًا ناجحًا**. هذا التحقق منطقي على مستوى الخطة ولا يساوي دورة Office مكتبية فعلية.
