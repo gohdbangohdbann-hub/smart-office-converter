@@ -9,6 +9,21 @@ export interface ExcelCellPlan { text: string; value: ExcelValue; rowIndex: numb
 export interface ExcelTablePlan { name: string; sheetName: string; rowCount: number; columnCount: number; headers: string[]; rows: ExcelRowPlan[]; columns: ExcelColumnPlan[]; cells: ExcelCellPlan[]; values: ExcelValue[][]; direction: "rtl" | "ltr"; confidence?: number; mergeRanges: string[]; }
 export interface ExcelWorksheetPlan { name: string; tables: ExcelTablePlan[]; }
 export interface ExcelWorkbookPlan { fileName: string; worksheets: ExcelWorksheetPlan[]; pageCount: number; language: OCRLanguage; warnings: string[]; }
+export function mergeInferredTablesAcrossPages(tables: InferredOCRTable[]): InferredOCRTable[] {
+  const merged: InferredOCRTable[] = [];
+  for (const current of tables) {
+    const previous = merged[merged.length - 1];
+    const currentHeader = current.cells.filter((cell) => cell.rowIndex === 0).sort((a, b) => a.columnIndex - b.columnIndex).map((cell) => cell.text).join("|");
+    const previousHeader = previous?.cells.filter((cell) => cell.rowIndex === 0).sort((a, b) => a.columnIndex - b.columnIndex).map((cell) => cell.text).join("|");
+    if (previous && previous.pageEnd + 1 === current.pageStart && previous.columnCount === current.columnCount && currentHeader && currentHeader === previousHeader) {
+      const repeatedHeaderRows = current.cells.filter((cell) => cell.rowIndex === 0);
+      const body = current.cells.filter((cell) => cell.rowIndex > 0).map((cell) => ({ ...cell, rowIndex: cell.rowIndex - 1 + previous.rowCount }));
+      previous.cells = [...previous.cells, ...body]; previous.rowCount += Math.max(0, current.rowCount - 1); previous.pageEnd = current.pageEnd;
+      void repeatedHeaderRows;
+    } else merged.push({ ...current, cells: [...current.cells] });
+  }
+  return merged;
+}
 
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 function normalizeDigits(text: string) { return text.replace(/[٠-٩]/g, (digit) => String(ARABIC_DIGITS.indexOf(digit))); }
@@ -45,3 +60,23 @@ export function buildExcelPlan(document: OCRDocument, mode: "separate" | "single
 }
 export function operationForFile(fileName: string, mimeType: string): "pdf" | "image" { return mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf") ? "pdf" : "image"; }
 export function resolveExcelOperation(requested: "pdf" | "image" | "smart", fileName: string, mimeType: string): "pdf" | "image" | "smart" { if (requested === "smart") return "smart"; return requested === operationForFile(fileName, mimeType) ? requested : "smart"; }
+export interface RawOCRTableCell { text: string; confidence?: number; polygon: BoundingBox; pageNumber: number; }
+export interface InferredOCRTable { pageStart: number; pageEnd: number; rowCount: number; columnCount: number; cells: OCRCell[]; }
+export function inferTablesFromRawCells(rawCells: RawOCRTableCell[], yTolerance = 0.025, xTolerance = 0.04): InferredOCRTable[] {
+  const byPage = new Map<number, RawOCRTableCell[]>(); rawCells.forEach((cell) => byPage.set(cell.pageNumber, [...(byPage.get(cell.pageNumber) ?? []), cell]));
+  return Array.from(byPage.entries()).sort(([a], [b]) => a - b).map(([pageNumber, pageCells]) => {
+    const rows: RawOCRTableCell[][] = [];
+    for (const cell of [...pageCells].sort((a, b) => a.polygon.y - b.polygon.y || a.polygon.x - b.polygon.x)) { const row = rows.find((candidate) => Math.abs(candidate[0]!.polygon.y - cell.polygon.y) <= yTolerance); if (row) row.push(cell); else rows.push([cell]); }
+    const columnCenters: number[] = [];
+    for (const cell of pageCells.sort((a: RawOCRTableCell, b: RawOCRTableCell) => a.polygon.x - b.polygon.x)) { const center = cell.polygon.x + cell.polygon.width / 2; const existing = columnCenters.findIndex((value) => Math.abs(value - center) <= xTolerance); if (existing >= 0) columnCenters[existing] = (columnCenters[existing]! + center) / 2; else columnCenters.push(center); }
+    columnCenters.sort((a, b) => a - b);
+    const orderedRows = rows.sort((a, b) => a[0]!.polygon.y - b[0]!.polygon.y);
+    const cells: OCRCell[] = [];
+    orderedRows.forEach((row, rowIndex) => {
+      const byColumn = new Map<number, RawOCRTableCell>();
+      row.forEach((cell) => { const columnIndex = Math.max(0, columnCenters.findIndex((center) => Math.abs(center - (cell.polygon.x + cell.polygon.width / 2)) <= xTolerance)); byColumn.set(columnIndex, cell); });
+      for (let columnIndex = 0; columnIndex < columnCenters.length; columnIndex += 1) { const cell = byColumn.get(columnIndex); cells.push(cell ? { text: cell.text, confidence: cell.confidence, rowIndex, columnIndex, polygon: cell.polygon, isHeader: rowIndex === 0 } : { text: "", rowIndex, columnIndex, isHeader: rowIndex === 0, isEmpty: true }); }
+    });
+    return { pageStart: pageNumber, pageEnd: pageNumber, rowCount: orderedRows.length, columnCount: columnCenters.length, cells };
+  });
+}

@@ -30,6 +30,8 @@ export interface OCRCell {
   confidence?: number;
   polygon?: BoundingBox;
   merge?: { rowSpan: number; columnSpan: number; confirmed?: boolean };
+  isHeader?: boolean;
+  isEmpty?: boolean;
 }
 
 export interface OCRTable {
@@ -37,6 +39,8 @@ export interface OCRTable {
   columnCount: number;
   cells: OCRCell[];
   confidence?: number;
+  pageStart?: number;
+  pageEnd?: number;
 }
 
 export interface OCRBlock {

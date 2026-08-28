@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { a1Address, buildExcelPlan, classifyExcelCell, resolveExcelOperation } from "@shared/excel";
+import { a1Address, buildExcelPlan, classifyExcelCell, inferTablesFromRawCells, mergeInferredTablesAcrossPages, resolveExcelOperation } from "@shared/excel";
 import type { OCRDocument } from "@shared/ocr";
 import { buildExcelTransformRequest, submitExcelTransform } from "@shared/excel-request";
+import { measureExcelFixture } from "@shared/excel-metrics";
 
 const fixture: OCRDocument = {
   id: "excel-fixture", fileName: "فاتورة-عربية.pdf", mimeType: "application/pdf", pageCount: 1, language: "mixed", provider: "fixture", processedAt: new Date().toISOString(),
@@ -62,6 +63,32 @@ describe("Excel conversion", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual(request);
     expect(request).toMatchObject({ operation: "pdf", mode: "separate", fileName: "arabic.pdf" });
+  });
+  it("measures table, row, column, numeric, currency, date, and RTL fixture quality", () => {
+    const metrics = measureExcelFixture(buildExcelPlan(fixture, "smart"));
+    expect(metrics.cellAccuracy).toBe(1); expect(metrics.rowAccuracy).toBe(1); expect(metrics.columnAccuracy).toBe(1); expect(metrics.tableStructureAccuracy).toBe(1); expect(metrics.numericAccuracy).toBe(1); expect(metrics.currencyAccuracy).toBe(1); expect(metrics.dateAccuracy).toBe(1); expect(metrics.rtlAccuracy).toBeGreaterThan(0.5);
+  });
+  it("keeps multiple OCR tables on separate worksheets in smart mode", () => {
+    const second = { ...fixture.tables[0]!, cells: fixture.tables[0]!.cells.map((cell) => ({ ...cell, rowIndex: cell.rowIndex + 3 })) };
+    const plan = buildExcelPlan({ ...fixture, pageCount: 2, tables: [fixture.tables[0]!, second] }, "smart");
+    expect(plan.worksheets).toHaveLength(2); expect(plan.worksheets.map((sheet) => sheet.tables)).toHaveLength(2);
+  });
+  it("infers borderless table rows and columns from raw OCR coordinates", () => {
+    const raw = [
+      { text: "رقم", pageNumber: 1, polygon: { x: 0.1, y: 0.1, width: 0.1, height: 0.04 } },
+      { text: "القيمة", pageNumber: 1, polygon: { x: 0.5, y: 0.1, width: 0.14, height: 0.04 } },
+      { text: "001", pageNumber: 1, polygon: { x: 0.1, y: 0.2, width: 0.1, height: 0.04 } },
+      { text: "500 DA", pageNumber: 1, polygon: { x: 0.5, y: 0.2, width: 0.14, height: 0.04 } },
+      { text: "صفحة 2", pageNumber: 2, polygon: { x: 0.1, y: 0.1, width: 0.2, height: 0.04 } },
+    ];
+    const inferred = inferTablesFromRawCells(raw);
+    expect(inferred).toHaveLength(2); expect(inferred[0]).toMatchObject({ pageStart: 1, pageEnd: 1, rowCount: 2, columnCount: 2 }); expect(inferred[0]!.cells.map((cell) => [cell.rowIndex, cell.columnIndex])).toEqual([[0, 0], [0, 1], [1, 0], [1, 1]]);
+    expect(inferred[0]!.cells.filter((cell) => cell.isHeader)).toHaveLength(2);
+    const sparse = inferTablesFromRawCells(raw.filter((cell) => cell.text !== "500 DA"));
+    expect(sparse[0]!.cells.find((cell) => cell.rowIndex === 1 && cell.columnIndex === 1)).toMatchObject({ text: "", isEmpty: true });
+    const repeated = [...raw.slice(0, 4), { text: "رقم", pageNumber: 2, polygon: { x: 0.1, y: 0.1, width: 0.1, height: 0.04 } }, { text: "القيمة", pageNumber: 2, polygon: { x: 0.5, y: 0.1, width: 0.14, height: 0.04 } }, { text: "002", pageNumber: 2, polygon: { x: 0.1, y: 0.2, width: 0.1, height: 0.04 } }, { text: "600 DA", pageNumber: 2, polygon: { x: 0.5, y: 0.2, width: 0.14, height: 0.04 } }];
+    const combined = mergeInferredTablesAcrossPages(inferTablesFromRawCells(repeated));
+    expect(combined).toHaveLength(1); expect(combined[0]).toMatchObject({ pageStart: 1, pageEnd: 2, rowCount: 3 }); expect(combined[0]!.cells.filter((cell) => cell.text === "رقم")).toHaveLength(1);
   });
   it("supports single worksheet mode and safe A1 addresses", () => {
     expect(buildExcelPlan(fixture, "single").worksheets[0]!.name).toBe("Nawa OCR");
