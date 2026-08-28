@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertSupportedFile, classifyPdf, createOCRProvider, DemoOCRProvider, processOCR, userFacingOCRMessage } from "./ocr";
+import { assertSupportedFile, classifyPdf, createOCRProvider, DemoOCRProvider, MAX_FILE_BYTES, processOCR, inspectFile, userFacingOCRMessage } from "./ocr";
 import { preprocessImage, preprocessPdf } from "./preprocess";
 import { detectLanguage, flattenDocumentText, toPreviewModel, type OCRDocument, type OCRProvider } from "@shared/ocr";
 
@@ -50,6 +50,12 @@ describe("Nawa OCR core", () => {
     expect(result.privacy).toEqual({ originalRetained: false, temporaryDataDeleted: true });
     expect(flattenDocumentText(result)).toContain("تجهيز");
     expect(result.pages[0]?.blocks[0]?.confidence).toBeGreaterThan(0);
+  });
+
+  it("rejects empty and oversized uploads with stable operational errors", () => {
+    expect(() => inspectFile({ fileName: "empty.pdf", mimeType: "application/pdf", bytesBase64: "" })).toThrow("EMPTY_FILE");
+    expect(() => inspectFile({ fileName: "large.pdf", mimeType: "application/pdf", bytesBase64: Buffer.alloc(MAX_FILE_BYTES + 1).toString("base64") })).toThrow("FILE_TOO_LARGE");
+    expect(userFacingOCRMessage(new Error("FILE_TOO_LARGE"))).toContain("12 ميغابايت");
   });
 
   it("maps operational failures to understandable messages", () => {

@@ -1,6 +1,9 @@
 import { nanoid } from "nanoid";
 import { detectLanguage, type OCRBlock, type OCRDocument, type OCRProvider, type OCRRequest } from "@shared/ocr";
 import { isImageMime, preprocessImage } from "./preprocess";
+import { logOCR } from "./safe-log";
+
+export const MAX_FILE_BYTES = 12 * 1024 * 1024;
 
 const SUPPORTED_TYPES = new Set([
   "application/pdf",
@@ -108,6 +111,7 @@ export function inspectFile(request: Pick<OCRRequest, "fileName" | "mimeType" | 
   assertSupportedFile(request.fileName, request.mimeType);
   const bytes = Buffer.from(request.bytesBase64, "base64");
   if (!bytes.length) throw new Error("EMPTY_FILE");
+  if (bytes.length > MAX_FILE_BYTES) throw new Error("FILE_TOO_LARGE");
   const isPdf = request.mimeType === "application/pdf" || request.fileName.toLowerCase().endsWith(".pdf");
   const sourceKind = isPdf ? classifyPdf(bytes) : "image";
   const pageCount = isPdf ? Math.max(1, (bytes.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? []).length) : 1;
@@ -121,12 +125,22 @@ export async function processOCR(request: OCRRequest): Promise<OCRDocument> {
   assertSupportedFile(request.fileName, request.mimeType);
   const bytes = Buffer.from(request.bytesBase64, "base64");
   if (!bytes.length) throw new Error("EMPTY_FILE");
+  if (bytes.length > MAX_FILE_BYTES) throw new Error("FILE_TOO_LARGE");
+  const startedAt = Date.now();
+  logOCR({ mimeType: request.mimeType, sizeBytes: bytes.length, status: "started" });
   try {
     const prepared = isImageMime(request.mimeType) ? await preprocessImage(bytes, request.mimeType) : { bytes, steps: [], originalRetained: false as const };
     const provider = createOCRProvider();
-    return await provider.analyze({ fileName: request.fileName, mimeType: request.mimeType, bytes: prepared.bytes });
+    const document = await provider.analyze({ fileName: request.fileName, mimeType: request.mimeType, bytes: prepared.bytes });
+    logOCR({ mimeType: request.mimeType, sizeBytes: bytes.length, pageCount: document.pageCount, durationMs: Date.now() - startedAt, status: "completed" });
+    return document;
   } catch (error) {
-    if (error instanceof Error && error.message === "OCR_PROVIDER_NOT_CONFIGURED") return makeDemoDocument(request, bytes);
+    if (error instanceof Error && error.message === "OCR_PROVIDER_NOT_CONFIGURED") {
+      const document = makeDemoDocument(request, bytes);
+      logOCR({ mimeType: request.mimeType, sizeBytes: bytes.length, pageCount: document.pageCount, durationMs: Date.now() - startedAt, status: "completed" });
+      return document;
+    }
+    logOCR({ mimeType: request.mimeType, sizeBytes: bytes.length, durationMs: Date.now() - startedAt, status: "failed", errorCode: error instanceof Error ? error.message : "UNKNOWN" });
     throw error;
   } finally {
     bytes.fill(0);
@@ -138,6 +152,7 @@ export function userFacingOCRMessage(error: unknown): string {
   const messages: Record<string, string> = {
     UNSUPPORTED_FILE: "نوع الملف غير مدعوم. اختر PDF أو PNG أو JPG أو TIFF أو WEBP.",
     EMPTY_FILE: "الملف فارغ أو تعذر قراءته.",
+    FILE_TOO_LARGE: "حجم الملف يتجاوز 12 ميغابايت. اختر ملفًا أصغر أو قسّمه إلى أجزاء.",
     UNREADABLE_IMAGE: "تعذر قراءة الصورة. استخدم صورة أوضح بصيغة PNG أو JPG.",
     CORRUPT_PDF: "يبدو أن ملف PDF تالف أو محمي. افتحه وأعد حفظه ثم حاول مجددًا.",
     OCR_TIMEOUT: "انتهت مهلة المعالجة. جرّب ملفًا أصغر أو أعد المحاولة.",

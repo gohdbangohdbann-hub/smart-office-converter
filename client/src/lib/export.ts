@@ -1,0 +1,37 @@
+import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from "docx";
+import * as XLSX from "xlsx";
+import { buildExcelPlan, type ExcelWorkbookPlan } from "@shared/excel";
+import { buildWordPlan, type WordDocumentPlan } from "@shared/word";
+import { formatDigits, type NumberDisplay } from "@shared/settings";
+import { nextOutputFileName, type BatchOutputMode } from "@shared/batch";
+import type { OCRDocument } from "@shared/ocr";
+
+function download(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+function tableFromRows(rows: string[][], numberDisplay: NumberDisplay): Table { return new Table({ rows: rows.map(row => new TableRow({ children: row.map(cell => new TableCell({ children: [new Paragraph(formatDigits(cell, numberDisplay))] })) })) }); }
+export async function downloadWord(document: OCRDocument, numberDisplay: NumberDisplay, existing: string[] = []): Promise<string> {
+  const plan: WordDocumentPlan = buildWordPlan(document); const children: Array<Paragraph | Table> = [];
+  for (const page of plan.pages) { for (const paragraph of [...page.header, ...page.paragraphs, ...page.footer]) children.push(new Paragraph({ children: [new TextRun({ text: formatDigits(paragraph.text, numberDisplay), bold: paragraph.bold })], alignment: paragraph.direction === "rtl" ? AlignmentType.RIGHT : AlignmentType.LEFT, heading: paragraph.kind === "heading" ? HeadingLevel.HEADING_1 : undefined, bidirectional: paragraph.direction === "rtl" })); for (const table of page.tables) children.push(tableFromRows(table.rows, numberDisplay)); }
+  const name = nextOutputFileName(document.fileName, "Word", existing); download(await Packer.toBlob(new Document({ sections: [{ children }] })), name); return name;
+}
+export function combineDocuments(documents: OCRDocument[], fileName: string): OCRDocument {
+  let pageNumber = 1;
+  return { ...(documents[0] ?? { id: "combined", mimeType: "application/pdf", language: "mixed", tables: [], pages: [], provider: "demo-local", processedAt: new Date().toISOString(), privacy: { originalRetained: false, temporaryDataDeleted: true } }), id: `combined-${Date.now()}`, fileName, pageCount: documents.reduce((sum, item) => sum + item.pageCount, 0), pages: documents.flatMap(item => item.pages.map(page => ({ ...page, pageNumber: pageNumber++ }))), tables: documents.flatMap(item => item.tables) };
+}
+export async function downloadWordBatch(documents: OCRDocument[], numberDisplay: NumberDisplay, mode: BatchOutputMode, existing: string[] = []): Promise<string[]> {
+  if (mode === "separate") { const names: string[] = []; for (const document of documents) names.push(await downloadWord(document, numberDisplay, existing)); return names; }
+  const combined = combineDocuments(documents, "Nawa_Batch.docx"); return [await downloadWord(combined, numberDisplay, existing)];
+}
+export function downloadExcelBatch(documents: OCRDocument[], numberDisplay: NumberDisplay, mode: BatchOutputMode, excelMode: "separate" | "single" | "smart" = "smart", existing: string[] = []): string[] {
+  if (mode === "separate") return documents.map(document => downloadExcel(document, numberDisplay, excelMode, existing));
+  if (mode === "combined") return [downloadExcel(combineDocuments(documents, "Nawa_Batch.xlsx"), numberDisplay, "single", existing)];
+  const workbook = XLSX.utils.book_new(); const names: string[] = [];
+  documents.forEach((document, index) => { const plan = buildExcelPlan(document, excelMode); const rows = plan.worksheets.flatMap(worksheet => worksheet.tables.flatMap(table => table.values.map(row => row.map(value => value == null ? "" : typeof value === "number" ? value : formatDigits(String(value), numberDisplay))))); XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), `File ${index + 1}`); });
+  const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }); const name = nextOutputFileName("Nawa_Batch", "Excel", existing); download(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name); names.push(name); return names;
+}
+export function downloadExcel(document: OCRDocument, numberDisplay: NumberDisplay, mode: "separate" | "single" | "smart" = "smart", existing: string[] = []): string {
+  const plan: ExcelWorkbookPlan = buildExcelPlan(document, mode); const workbook = XLSX.utils.book_new();
+  for (const worksheet of plan.worksheets) { const rows = worksheet.tables.flatMap(table => table.values.map(row => row.map(value => value == null ? "" : typeof value === "number" ? value : formatDigits(String(value), numberDisplay)))); const sheet = XLSX.utils.aoa_to_sheet(rows); XLSX.utils.book_append_sheet(workbook, sheet, worksheet.name.slice(0, 31)); }
+  const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }); const name = nextOutputFileName(document.fileName, "Excel", existing); download(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name); return name;
+}
