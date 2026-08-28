@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { inspectFile, processOCR, userFacingOCRMessage } from "./ocr";
 import { buildWordPlan } from "@shared/word";
+import { buildExcelPlan, operationForFile } from "@shared/excel";
 import { z } from "zod";
 
 const ocrInput = z.object({
@@ -29,6 +30,12 @@ export const appRouter = router({
       } catch (error) {
         throw new Error(userFacingOCRMessage(error));
       }
+    }),
+  }),
+  excel: router({
+    transform: publicProcedure.input(ocrInput.extend({ operation: z.enum(["pdf", "image", "smart"]).default("smart"), mode: z.enum(["separate", "single", "smart"]).default("smart") })).mutation(async ({ input }) => {
+      try { const detectedOperation = operationForFile(input.fileName, input.mimeType); if (input.operation !== "smart" && input.operation !== detectedOperation) throw new Error("OPERATION_FILE_MISMATCH"); const document = await processOCR(input); return { document, plan: buildExcelPlan(document, input.mode) }; }
+      catch (error) { throw new Error(userFacingOCRMessage(error)); }
     }),
   }),
   word: router({

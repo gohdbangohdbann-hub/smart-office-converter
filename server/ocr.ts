@@ -112,8 +112,9 @@ export function inspectFile(request: Pick<OCRRequest, "fileName" | "mimeType" | 
   const sourceKind = isPdf ? classifyPdf(bytes) : "image";
   const pageCount = isPdf ? Math.max(1, (bytes.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? []).length) : 1;
   const detectedLanguage = isPdf ? detectLanguage(bytes.toString("utf8")) : "unknown";
+  const tableCount = isPdf ? (bytes.toString("latin1").match(/\/Table\b/g) ?? []).length : 0;
   bytes.fill(0);
-  return { fileName: request.fileName, mimeType: request.mimeType, pageCount, sourceKind, detectedLanguage };
+  return { fileName: request.fileName, mimeType: request.mimeType, pageCount, sourceKind, detectedLanguage, tableCount };
 }
 
 export async function processOCR(request: OCRRequest): Promise<OCRDocument> {

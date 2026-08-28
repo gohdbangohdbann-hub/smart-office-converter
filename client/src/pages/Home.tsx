@@ -10,17 +10,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { toPreviewModel, type OCRDocument } from "@shared/ocr";
 import { buildWordPlan, type WordDocumentPlan } from "@shared/word";
+import { buildExcelPlan, resolveExcelOperation, type ExcelWorkbookPlan } from "@shared/excel";
 import { progressFor, type WordProgress } from "@shared/word-progress";
 import { reduceWordProgress } from "@shared/word-progress-flow";
+import { submitExcelTransform } from "@shared/excel-request";
 
 const supported = ".pdf,.png,.jpg,.jpeg,.tiff,.webp";
 
-type Host = "Word" | "Browser";
+type Host = "Word" | "Excel" | "Browser";
 type UiLocale = "ar" | "fr" | "en";
 
 function currentHost(): Host {
   if (typeof Office === "undefined" || !Office.context?.host) return "Browser";
-  return Office.context.host === Office.HostType.Word ? "Word" : "Browser";
+  if (Office.context.host === Office.HostType.Word) return "Word";
+  if (Office.context.host === Office.HostType.Excel) return "Excel";
+  return "Browser";
 }
 
 function officeErrorMessage(error: unknown) {
@@ -31,7 +35,7 @@ function officeErrorMessage(error: unknown) {
   return "تعذر الإدراج في Office. تأكد من فتح المستند وتفعيل الإضافة.";
 }
 
-async function insertIntoOffice(document: OCRDocument, host: Host) {
+async function insertIntoOffice(document: OCRDocument, host: Host, excelMode: "separate" | "single" | "smart") {
   if (host === "Word" && typeof Word !== "undefined") {
     const plan = buildWordPlan(document);
     await Word.run(async (context: Word.RequestContext) => {
@@ -54,6 +58,35 @@ async function insertIntoOffice(document: OCRDocument, host: Host) {
     });
     return;
   }
+  if (host === "Excel" && typeof Excel !== "undefined") {
+    const plan = buildExcelPlan(document, excelMode);
+    await Excel.run(async (context: Excel.RequestContext) => {
+      for (const worksheetPlan of plan.worksheets) {
+        const sheet = context.workbook.worksheets.add(worksheetPlan.name);
+        for (const table of worksheetPlan.tables) {
+          if (!table.values.length || !table.values[0]?.length) continue;
+          const endColumn = String.fromCharCode(65 + table.columnCount - 1);
+          const range = sheet.getRange(`A1:${endColumn}${table.rowCount}`);
+          range.values = table.values;
+          range.format.wrapText = true;
+          range.format.autofitColumns();
+          range.format.autofitRows();
+          range.format.horizontalAlignment = table.direction === "rtl" ? "Right" : "Left";
+          for (const borderIndex of ["EdgeTop", "EdgeBottom", "EdgeLeft", "EdgeRight", "InsideHorizontal", "InsideVertical"] as const) { const border = range.format.borders.getItem(borderIndex); border.style = "Continuous"; border.weight = "Thin"; border.color = "#d7dce5"; }
+          for (const mergeRange of table.mergeRanges) sheet.getRange(mergeRange).merge(false);
+          if (!table.mergeRanges.length) {
+            const excelTable = sheet.tables.add(range, true);
+            excelTable.name = table.name;
+            excelTable.getHeaderRowRange().format.font.bold = true;
+          } else {
+            range.getRow(0).format.font.bold = true;
+          }
+        }
+      }
+      await context.sync();
+    });
+    return;
+  }
   throw new Error("OFFICE_HOST_UNAVAILABLE");
 }
 
@@ -64,37 +97,42 @@ export default function Home() {
   const [language, setLanguage] = useState("auto");
   const [uiLocale, setUiLocale] = useState<UiLocale>("ar");
   const [wordPlan, setWordPlan] = useState<WordDocumentPlan | null>(null);
-  const [metadata, setMetadata] = useState<{ pageCount: number; sourceKind: string; detectedLanguage: string } | null>(null);
+  const [excelPlan, setExcelPlan] = useState<ExcelWorkbookPlan | null>(null);
+  const [metadata, setMetadata] = useState<{ pageCount: number; sourceKind: string; detectedLanguage: string; tableCount: number } | null>(null);
   const [operation, setOperation] = useState<"smart" | "pdf" | "image">("smart");
+  const [excelMode, setExcelMode] = useState<"separate" | "single" | "smart">("smart");
   const [wordProgress, setWordProgress] = useState<WordProgress>(() => progressFor("idle"));
   const [status, setStatus] = useState("جاهز لاستقبال ملف");
   const inspect = trpc.word.inspect.useMutation({ onSuccess: (data) => { setMetadata(data); setWordProgress((state) => reduceWordProgress(state, { type: "file-selected", totalPages: data.pageCount })); }, onError: (error) => toast.error(error.message) });
-  const process = trpc.word.transform.useMutation({ onSuccess: ({ document, plan }) => { setResult(document); setWordPlan(plan); setWordProgress((state) => reduceWordProgress(state, { type: "success", partial: plan.warnings.length > 0 })); setStatus(plan.warnings.length ? "اكتمل التحويل مع صفحات تحتاج مراجعة" : "اكتمل بناء مستند Word"); }, onError: (error) => { setWordProgress((state) => reduceWordProgress(state, { type: "failure" })); setStatus("تعذر إكمال التحويل"); toast.error(error.message); } });
+  const process = trpc.word.transform.useMutation({ onSuccess: ({ document, plan }) => { setResult(document); setWordPlan(plan); setExcelPlan(null); setWordProgress((state) => reduceWordProgress(state, { type: "success", partial: plan.warnings.length > 0 })); setStatus(plan.warnings.length ? "اكتمل التحويل مع صفحات تحتاج مراجعة" : "اكتمل بناء مستند Word"); }, onError: (error) => { setWordProgress((state) => reduceWordProgress(state, { type: "failure" })); setStatus("تعذر إكمال التحويل"); toast.error(error.message); } });
+  const excelProcess = trpc.excel.transform.useMutation({ onSuccess: ({ document, plan }) => { setResult(document); setExcelPlan(plan); setWordPlan(null); setWordProgress((state) => reduceWordProgress(state, { type: "success", partial: plan.warnings.length > 0 })); setStatus(plan.warnings.length ? "اكتمل التحويل مع جداول تحتاج مراجعة" : "اكتملت خلايا Excel القابلة للتحرير"); }, onError: (error) => { setWordProgress((state) => reduceWordProgress(state, { type: "failure" })); setStatus("تعذر بناء جدول Excel"); toast.error(error.message); } });
+  const isConverting = process.isPending || excelProcess.isPending;
 
   useEffect(() => {
     if (typeof Office !== "undefined") Office.onReady(() => setHost(currentHost()));
   }, []);
   useEffect(() => {
-    if (!process.isPending) return;
+    if (!process.isPending && !excelProcess.isPending) return;
     const stages = ["analyzing", "ocr", "building"] as const;
     let index = 0;
     const timer = window.setInterval(() => { const stage = stages[Math.min(index++, stages.length - 1)]!; const total = metadata?.pageCount ?? 1; setWordProgress((state) => reduceWordProgress(state, { type: "stage", stage, currentPage: stage === "analyzing" ? 0 : Math.min(total, index) })); setStatus(progressFor(stage, stage === "analyzing" ? 0 : Math.min(total, index), total).message); }, 700);
     return () => window.clearInterval(timer);
-  }, [process.isPending]);
+  }, [process.isPending, excelProcess.isPending, metadata?.pageCount]);
 
   const preview = result ? toPreviewModel(result) : null;
   const confidence = Math.round((preview?.confidence ?? 0) * 100);
   const encodeFile = async (selected: File) => btoa(String.fromCharCode(...Array.from(new Uint8Array(await selected.arrayBuffer()))));
   const handleFileChange = async (selected: File | null) => {
-    setFile(selected); setResult(null); setWordPlan(null); setMetadata(null);
+    setFile(selected); setResult(null); setWordPlan(null); setExcelPlan(null); setMetadata(null);
     if (selected) inspect.mutate({ fileName: selected.name, mimeType: selected.type || "application/octet-stream", bytesBase64: await encodeFile(selected) });
   };
   const handleProcess = async () => {
     if (!file) return toast.error("اختر ملفًا أولًا");
     const base64 = await encodeFile(file);
-    const initialStage = operation === "pdf" || operation === "image" || operation === "smart" ? "analyzing" : "analyzing";
+    const initialStage = "analyzing" as const;
     setWordProgress((state) => reduceWordProgress(state, { type: "start" })); setStatus(progressFor(initialStage).message);
-    process.mutate({ fileName: file.name, mimeType: file.type || "application/octet-stream", bytesBase64: base64 });
+    if (host === "Excel") submitExcelTransform(excelProcess.mutate, file, base64, operation, excelMode);
+    else process.mutate({ fileName: file.name, mimeType: file.type || "application/octet-stream", bytesBase64: base64 });
   };
 
   return <main dir={uiLocale === "ar" ? "rtl" : "ltr"} className="min-h-screen overflow-x-hidden bg-[#f6f7fb] text-slate-900">
@@ -107,14 +145,14 @@ export default function Home() {
       <section className="grid min-w-0 flex-1 gap-6 py-7 lg:grid-cols-[0.92fr_1.08fr]">
         <Card className="min-w-0 border-0 bg-white/90 shadow-[0_20px_60px_rgba(15,23,42,0.08)]"><CardHeader><div className="flex items-center justify-between"><div><CardTitle className="text-lg">ابدأ من ملفك</CardTitle><p className="mt-1 text-sm text-slate-500">PDF أو صورة — العربية أولًا</p></div><WandSparkles className="size-5 text-indigo-500" /></div></CardHeader><CardContent className="space-y-5">
           <label className="group flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-indigo-200 bg-indigo-50/40 px-5 text-center transition hover:border-indigo-400 hover:bg-indigo-50"><input type="file" accept={supported} className="sr-only" onChange={(event) => { void handleFileChange(event.target.files?.[0] ?? null); }} /><FileUp className="mb-3 size-8 text-indigo-500 transition group-hover:-translate-y-1" /><span className="font-semibold text-slate-800">{file ? file.name : "اسحب الملف هنا أو اختره"}</span><span className="mt-2 text-xs text-slate-500">PDF · PNG · JPG · TIFF · WEBP</span>{file && <span className="mt-3 text-xs text-indigo-600">{file.type || "نوع غير معروف"} · {(file.size / 1024).toFixed(1)} KB</span>}</label>
-          <div className="grid grid-cols-3 gap-2"><Button type="button" variant="outline" className={operation === "pdf" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setOperation("pdf")}>PDF → Word</Button><Button type="button" variant="outline" className={operation === "image" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setOperation("image")}>صورة → Word</Button><Button type="button" variant="outline" className={operation === "smart" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setOperation("smart")}>تحويل ذكي</Button></div><div><div className="mb-2 flex items-center justify-between text-sm"><span className="font-medium">اكتشاف اللغة</span><span className="text-slate-500">{language === "auto" ? "تلقائي" : language}</span></div><Tabs value={language} onValueChange={setLanguage}><TabsList className="grid w-full grid-cols-4 bg-slate-100"><TabsTrigger value="auto">تلقائي</TabsTrigger><TabsTrigger value="ar">العربية</TabsTrigger><TabsTrigger value="fr">Français</TabsTrigger><TabsTrigger value="en">English</TabsTrigger></TabsList></Tabs></div>
-          <Button className="h-12 w-full rounded-xl bg-slate-950 text-base hover:bg-indigo-700" onClick={handleProcess} disabled={!file || process.isPending}>{process.isPending ? <><Loader2 className="ml-2 size-4 animate-spin" /> جارٍ بناء مستند Word...</> : <><WandSparkles className="ml-2 size-4" /> تحويل ذكي إلى Word</>}</Button>
-          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-600">{status}{process.isPending && <><Progress value={wordProgress.percent} className="mt-2 h-1.5" /><span className="mt-1 block text-xs text-indigo-600">{wordProgress.percent}% · الصفحة {wordProgress.currentPage || 1} من {wordProgress.totalPages || metadata?.pageCount || 1}</span></>}{metadata && <span className="mr-2 text-xs text-slate-400">· {metadata.pageCount} صفحة · {metadata.sourceKind} · اللغة المكتشفة: {metadata.detectedLanguage}</span>}{result && <span className="mr-2 text-xs text-slate-400">· اللغة النهائية: {result.language}</span>}</div><p className="flex items-center gap-2 text-xs leading-5 text-slate-500"><ShieldCheck className="size-4 shrink-0 text-emerald-600" /> لا يُحتفظ بالملف الأصلي؛ تُمسح البيانات المؤقتة بعد اكتمال المعالجة.</p>
+          <div className="grid grid-cols-3 gap-2"><Button type="button" variant="outline" className={operation === "pdf" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setOperation("pdf")}>{host === "Excel" ? "PDF → Excel" : "PDF → Word"}</Button><Button type="button" variant="outline" className={operation === "image" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setOperation("image")}>{host === "Excel" ? "صورة → Excel" : "صورة → Word"}</Button><Button type="button" variant="outline" className={operation === "smart" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setOperation("smart")}>{host === "Excel" ? "تحويل ذكي إلى Excel" : "تحويل ذكي"}</Button></div>{host === "Excel" && <div className="rounded-xl bg-slate-50 p-2"><p className="mb-2 text-xs font-medium text-slate-600">توزيع الجداول</p><div className="grid grid-cols-3 gap-1"><Button type="button" variant="outline" className={excelMode === "separate" ? "bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setExcelMode("separate")}>ورقة لكل جدول</Button><Button type="button" variant="outline" className={excelMode === "single" ? "bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setExcelMode("single")}>ورقة واحدة</Button><Button type="button" variant="outline" className={excelMode === "smart" ? "bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setExcelMode("smart")}>ذكي</Button></div></div>}<div><div className="mb-2 flex items-center justify-between text-sm"><span className="font-medium">اكتشاف اللغة</span><span className="text-slate-500">{language === "auto" ? "تلقائي" : language}</span></div><Tabs value={language} onValueChange={setLanguage}><TabsList className="grid w-full grid-cols-4 bg-slate-100"><TabsTrigger value="auto">تلقائي</TabsTrigger><TabsTrigger value="ar">العربية</TabsTrigger><TabsTrigger value="fr">Français</TabsTrigger><TabsTrigger value="en">English</TabsTrigger></TabsList></Tabs></div>
+          <Button className="h-12 w-full rounded-xl bg-slate-950 text-base hover:bg-indigo-700" onClick={handleProcess} disabled={!file || isConverting}>{isConverting ? <><Loader2 className="ml-2 size-4 animate-spin" /> {host === "Excel" ? "جارٍ بناء جدول Excel..." : "جارٍ بناء مستند Word..."}</> : <><WandSparkles className="ml-2 size-4" /> {host === "Excel" ? "تحويل ذكي إلى Excel" : "تحويل ذكي إلى Word"}</>}</Button>
+          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-600">{status}{isConverting && <><Progress value={wordProgress.percent} className="mt-2 h-1.5" /><span className="mt-1 block text-xs text-indigo-600">{wordProgress.percent}% · الصفحة {wordProgress.currentPage || 1} من {wordProgress.totalPages || metadata?.pageCount || 1}</span></>}{metadata && <span className="mr-2 text-xs text-slate-400">· {metadata.pageCount} صفحة · {metadata.tableCount} جدول مبدئي · {metadata.sourceKind} · اللغة المكتشفة: {metadata.detectedLanguage}</span>}{result && <span className="mr-2 text-xs text-slate-400">· اللغة النهائية: {result.language}</span>}</div><p className="flex items-center gap-2 text-xs leading-5 text-slate-500"><ShieldCheck className="size-4 shrink-0 text-emerald-600" /> لا يُحتفظ بالملف الأصلي؛ تُمسح البيانات المؤقتة بعد اكتمال المعالجة.</p>
         </CardContent></Card>
 
-        <Card className="min-w-0 border-0 bg-white/90 shadow-[0_20px_60px_rgba(15,23,42,0.08)]"><CardHeader><div className="flex items-center justify-between"><div><CardTitle className="text-lg">معاينة النتيجة</CardTitle><p className="mt-1 text-sm text-slate-500">خطة Word قابلة للتحرير</p></div>{result && <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100">{result.provider}</Badge>}</div></CardHeader><CardContent>{!result ? <div className="flex min-h-[340px] flex-col items-center justify-center rounded-2xl bg-slate-50 text-center"><FileText className="mb-4 size-10 text-slate-300" /><p className="font-medium text-slate-600">ستظهر النتيجة هنا</p><p className="mt-1 max-w-xs text-sm leading-6 text-slate-400">النص، الثقة، اللغة، والجداول في بنية واحدة قابلة للإدراج.</p></div> : <div className="space-y-4"><div className="grid grid-cols-3 gap-3"><Stat icon={<Languages />} label="اللغة" value={preview?.language ?? "—"} /><Stat icon={<FileText />} label="الصفحات" value={String(preview?.pageCount ?? 0)} /><Stat icon={<Grid3X3 />} label="الجداول" value={String(preview?.tables.length ?? 0)} /></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold">الثقة الإرشادية</span><span className="text-sm font-bold text-indigo-700">{confidence}%</span></div><Progress value={confidence} className="h-2" /><p className="mt-2 text-xs text-slate-500">مؤشر للمراجعة وليس ضمانًا لصحة النص.</p></div><div className="max-h-52 overflow-auto rounded-2xl border border-slate-200 p-4 text-sm leading-8 whitespace-pre-wrap">{preview?.text}</div>{wordPlan?.warnings.length ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{wordPlan.warnings.join(" · ")}</div> : null}{(preview?.tables.length ?? 0) > 0 && <div className="rounded-2xl border border-slate-200 p-4 text-sm"><p className="mb-2 font-semibold">الجداول المكتشفة</p><p className="mb-3 text-slate-500">{preview?.tables.length ?? 0} جدول · {preview?.tables[0]?.rowCount} صفوف · {preview?.tables[0]?.columnCount} أعمدة</p><div className="overflow-auto rounded-lg border border-slate-200"><table className="min-w-full text-right"><tbody>{Array.from({ length: preview?.tables[0]?.rowCount ?? 0 }, (_, row) => <tr key={row} className="border-b last:border-0">{Array.from({ length: preview?.tables[0]?.columnCount ?? 0 }, (_, column) => <td key={column} className="px-3 py-2 text-slate-700">{preview?.tables[0]?.cells.find((cell) => cell.rowIndex === row && cell.columnIndex === column)?.text ?? "—"}</td>)}</tr>)}</tbody></table></div></div>}<Button variant="outline" className="h-11 w-full rounded-xl border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100" onClick={() => insertIntoOffice(result, host).then(() => toast.success("تم إدراج المحتوى القابل للتحرير في Word")).catch((error) => toast.error(officeErrorMessage(error)))}>إدراج المحتوى في Word</Button></div>}</CardContent></Card>
+        <Card className="min-w-0 border-0 bg-white/90 shadow-[0_20px_60px_rgba(15,23,42,0.08)]"><CardHeader><div className="flex items-center justify-between"><div><CardTitle className="text-lg">معاينة النتيجة</CardTitle><p className="mt-1 text-sm text-slate-500">{host === "Excel" ? "خلايا Excel قابلة للتحرير" : "خطة Word قابلة للتحرير"}</p></div>{result && <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100">{result.provider}</Badge>}</div></CardHeader><CardContent>{!result ? <div className="flex min-h-[340px] flex-col items-center justify-center rounded-2xl bg-slate-50 text-center"><FileText className="mb-4 size-10 text-slate-300" /><p className="font-medium text-slate-600">ستظهر النتيجة هنا</p><p className="mt-1 max-w-xs text-sm leading-6 text-slate-400">النص، الثقة، اللغة، والجداول في بنية واحدة قابلة للإدراج.</p></div> : <div className="space-y-4"><div className="grid grid-cols-3 gap-3"><Stat icon={<Languages />} label="اللغة" value={preview?.language ?? "—"} /><Stat icon={<FileText />} label="الصفحات" value={String(preview?.pageCount ?? 0)} /><Stat icon={<Grid3X3 />} label="الجداول" value={String(preview?.tables.length ?? 0)} /></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold">الثقة الإرشادية</span><span className="text-sm font-bold text-indigo-700">{confidence}%</span></div><Progress value={confidence} className="h-2" /><p className="mt-2 text-xs text-slate-500">مؤشر للمراجعة وليس ضمانًا لصحة النص.</p></div>{host === "Excel" && excelPlan ? <div className="max-h-64 overflow-auto rounded-2xl border border-slate-200 p-4 text-sm"><p className="mb-3 font-semibold">معاينة خلايا Excel الحقيقية</p>{excelPlan.worksheets.map((worksheet) => worksheet.tables.map((table) => <div key={table.name} className="mb-4 overflow-auto rounded-lg border border-slate-200"><p className="bg-slate-50 px-3 py-2 text-xs font-semibold">{worksheet.name} · {table.rowCount} × {table.columnCount}</p><table className="min-w-full text-right"><tbody>{table.values.map((row, rowIndex) => <tr key={rowIndex} className="border-b last:border-0">{row.map((value, columnIndex) => <td key={columnIndex} className={`px-3 py-2 ${rowIndex === 0 ? "font-semibold bg-indigo-50/50" : ""}`}>{value == null ? "" : String(value)}</td>)}</tr>)}</tbody></table></div>))}</div> : <div className="max-h-52 overflow-auto rounded-2xl border border-slate-200 p-4 text-sm leading-8 whitespace-pre-wrap">{preview?.text}</div>}{wordPlan?.warnings.length ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{wordPlan.warnings.join(" · ")}</div> : null}{(preview?.tables.length ?? 0) > 0 && <div className="rounded-2xl border border-slate-200 p-4 text-sm"><p className="mb-2 font-semibold">الجداول المكتشفة</p><p className="mb-3 text-slate-500">{preview?.tables.length ?? 0} جدول · {preview?.tables[0]?.rowCount} صفوف · {preview?.tables[0]?.columnCount} أعمدة</p><div className="overflow-auto rounded-lg border border-slate-200"><table className="min-w-full text-right"><tbody>{Array.from({ length: preview?.tables[0]?.rowCount ?? 0 }, (_, row) => <tr key={row} className="border-b last:border-0">{Array.from({ length: preview?.tables[0]?.columnCount ?? 0 }, (_, column) => <td key={column} className="px-3 py-2 text-slate-700">{preview?.tables[0]?.cells.find((cell) => cell.rowIndex === row && cell.columnIndex === column)?.text ?? "—"}</td>)}</tr>)}</tbody></table></div></div>}<Button variant="outline" className="h-11 w-full rounded-xl border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100" onClick={() => insertIntoOffice(result, host, excelMode).then(() => toast.success(host === "Excel" ? "تم إدراج الخلايا الحقيقية في Excel" : "تم إدراج المحتوى القابل للتحرير في Word")).catch((error) => toast.error(officeErrorMessage(error)))}>{host === "Excel" ? "إدراج الخلايا في Excel" : "إدراج المحتوى في Word"}</Button></div>}</CardContent></Card>
       </section>
-      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500"><span>المرحلة الثانية · Nawa OCR Word</span><span>PDF / Image → Word · العربية أولًا</span></footer>
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500"><span>المرحلة {host === "Excel" ? "الثالثة" : "الثانية"} · Nawa OCR {host}</span><span>PDF / Image → {host === "Excel" ? "Excel" : "Word"} · العربية أولًا</span></footer>
     </div>
   </main>;
 }

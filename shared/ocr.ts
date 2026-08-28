@@ -29,6 +29,7 @@ export interface OCRCell {
   columnIndex: number;
   confidence?: number;
   polygon?: BoundingBox;
+  merge?: { rowSpan: number; columnSpan: number; confirmed?: boolean };
 }
 
 export interface OCRTable {
