@@ -41,3 +41,10 @@
 
 [1]: https://learn.microsoft.com/en-us/office/dev/add-ins/overview/office-add-ins "Office Add-ins platform overview — Microsoft Learn"
 [2]: https://learn.microsoft.com/en-us/office/dev/add-ins/concepts/requirements-for-running-office-add-ins "Requirements for running Office Add-ins — Microsoft Learn"
+
+
+## تحسينات UI واختبارات التفاعل
+
+أضيفت حالات تحميل لمعاينة DOCX وXLSX تظهر أثناء تجهيز الخطة، مع انتقال ظهور قصير باستخدام `opacity` و`transform`، وتعطيل الحركة غير الضرورية عند تفعيل `prefers-reduced-motion`. لا تُنشئ المعاينة ملفًا مؤقتًا ولا تغيّر المصدر.
+
+أضيف `shared/ribbon.ts` لاستخراج معلمات `panel=review` و`panel=settings` بطريقة قابلة للاختبار، وربطت Home به بدل القراءة المباشرة للعنوان. تغطي `server/ribbon-ui.test.ts` زر الاستيراد في Word، وزر الاستيراد في Excel، ومساري المراجعة والإعدادات، مع التحقق من أن كل زر يفتح Task Pane الصحيح. هذه اختبارات UI تعاقدية محلية لمسار manifest والتوجيه؛ ولا تستبدل sideload فعليًا داخل Word وExcel المكتبيين.

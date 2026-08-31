@@ -24,6 +24,7 @@ import { downloadExcel, downloadExcelBatch, downloadWord, downloadWordBatch } fr
 import { VerificationPanel } from "@/components/VerificationPanel";
 import { OutputPreview } from "@/components/OutputPreview";
 import { hasOccupiedCells, tableStart, type ExcelInsertMode, type WordInsertMode } from "@shared/office-insertion";
+import { parseRibbonPanel } from "@shared/ribbon";
 
 const supported = ".pdf,.png,.jpg,.jpeg,.tiff,.webp";
 
@@ -126,7 +127,7 @@ export default function Home() {
   const [language, setLanguage] = useState<string>(() => loadNawaSettings().ocrLanguage);
   const [uiLocale, setUiLocale] = useState<UiLocale>(() => loadNawaSettings().uiLocale);
   const [settings, setSettings] = useState<NawaSettings>(() => loadNawaSettings());
-  const [ribbonPanel] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("panel") ?? "");
+  const [ribbonPanel] = useState(() => typeof window === "undefined" ? "" : parseRibbonPanel(window.location.search));
   const [showSettings, setShowSettings] = useState(() => ribbonPanel === "settings");
   const [showBatch, setShowBatch] = useState(false);
   const [target, setTarget] = useState<"Word" | "Excel">(() => currentHost() === "Excel" ? "Excel" : "Word");
