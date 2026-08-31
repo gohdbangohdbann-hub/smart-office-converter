@@ -23,7 +23,6 @@ import { SettingsPanel, loadNawaSettings } from "@/components/SettingsPanel";
 import { downloadExcel, downloadExcelBatch, downloadWord, downloadWordBatch } from "@/lib/export";
 import { VerificationPanel } from "@/components/VerificationPanel";
 import { OutputPreview } from "@/components/OutputPreview";
-import { NumberToWordsPanel } from "@/components/NumberToWordsPanel";
 import { hasOccupiedCells, tableStart, type ExcelInsertMode, type WordInsertMode } from "@shared/office-insertion";
 
 const supported = ".pdf,.png,.jpg,.jpeg,.tiff,.webp";
@@ -219,7 +218,6 @@ export default function Home() {
         <div className="flex items-center gap-2"><Button type="button" variant="outline" size="sm" className="bg-white" onClick={() => setShowSettings(current => !current)}><Settings2 className="ml-1 size-3" /> الإعدادات</Button><div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[11px]">{([['ar','العربية'],['fr','FR'],['en','EN']] as const).map(([code, label]) => <button key={code} type="button" onClick={() => setUiLocale(code)} className={`rounded-md px-2 py-1 transition ${uiLocale === code ? "bg-slate-950 text-white" : "text-slate-500 hover:text-slate-900"}`}>{label}</button>)}</div><Badge variant="outline" className="border-slate-300 bg-white text-slate-600">Host: {host}</Badge><Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100"><ShieldCheck className="ml-1 size-3" /> معالجة مؤقتة</Badge></div>
       </header>
 
-      <NumberToWordsPanel host={host} />
       {showSettings && <section className="pb-5"><SettingsPanel value={settings} onChange={(next) => { setSettings(next); setUiLocale(next.uiLocale); setLanguage(next.ocrLanguage); setExcelMode(next.excelTableMode); }} onClose={() => setShowSettings(false)} /></section>}
       {showBatch && <section className="pb-5"><BatchPanel destination={conversionTarget} onProcess={processBatchFile} onBatchComplete={completeBatch} onOpenResult={openBatchResult} /></section>}
       <section className="grid min-w-0 flex-1 gap-6 py-7 lg:grid-cols-[0.92fr_1.08fr]">

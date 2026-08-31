@@ -3,9 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
-  "description": "Nawa OCR Office and NumberToWords for Arabic-first Word and Excel workflows",
+  "description": "Nawa OCR Office add-in for Arabic-first Word and Excel OCR workflows",
   "author": "Nawa",
-  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
@@ -13,9 +12,7 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate",
-    "desktop:dev": "pnpm build && electron .",
-    "desktop:dist": "pnpm build && electron-builder --win nsis"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
@@ -102,8 +99,6 @@
     "add": "^2.0.6",
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.4",
-    "electron": "^44.0.0",
-    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
     "pnpm": "^10.15.1",
     "postcss": "^8.4.47",
