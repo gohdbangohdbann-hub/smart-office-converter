@@ -10,10 +10,14 @@ function download(blob: Blob, name: string): void {
   const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 function tableFromRows(rows: string[][], numberDisplay: NumberDisplay): Table { return new Table({ rows: rows.map(row => new TableRow({ children: row.map(cell => new TableCell({ children: [new Paragraph(formatDigits(cell, numberDisplay))] })) })) }); }
-export async function downloadWord(document: OCRDocument, numberDisplay: NumberDisplay, existing: string[] = []): Promise<string> {
+export async function createWordBlob(document: OCRDocument, numberDisplay: NumberDisplay): Promise<Blob> {
   const plan: WordDocumentPlan = buildWordPlan(document); const children: Array<Paragraph | Table> = [];
   for (const page of plan.pages) { for (const paragraph of [...page.header, ...page.paragraphs, ...page.footer]) children.push(new Paragraph({ children: [new TextRun({ text: formatDigits(paragraph.text, numberDisplay), bold: paragraph.bold })], alignment: paragraph.direction === "rtl" ? AlignmentType.RIGHT : AlignmentType.LEFT, heading: paragraph.kind === "heading" ? HeadingLevel.HEADING_1 : undefined, bidirectional: paragraph.direction === "rtl" })); for (const table of page.tables) children.push(tableFromRows(table.rows, numberDisplay)); }
-  const name = nextOutputFileName(document.fileName, "Word", existing); download(await Packer.toBlob(new Document({ sections: [{ children }] })), name); return name;
+  return Packer.toBlob(new Document({ sections: [{ children }] }));
+}
+
+export async function downloadWord(document: OCRDocument, numberDisplay: NumberDisplay, existing: string[] = []): Promise<string> {
+  const name = nextOutputFileName(document.fileName, "Word", existing); download(await createWordBlob(document, numberDisplay), name); return name;
 }
 export function combineDocuments(documents: OCRDocument[], fileName: string): OCRDocument {
   let pageNumber = 1;
@@ -30,8 +34,12 @@ export function downloadExcelBatch(documents: OCRDocument[], numberDisplay: Numb
   documents.forEach((document, index) => { const plan = buildExcelPlan(document, excelMode); const rows = plan.worksheets.flatMap(worksheet => worksheet.tables.flatMap(table => table.values.map(row => row.map(value => value == null ? "" : typeof value === "number" ? value : formatDigits(String(value), numberDisplay))))); XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), `File ${index + 1}`); });
   const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }); const name = nextOutputFileName("Nawa_Batch", "Excel", existing); download(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name); names.push(name); return names;
 }
-export function downloadExcel(document: OCRDocument, numberDisplay: NumberDisplay, mode: "separate" | "single" | "smart" = "smart", existing: string[] = []): string {
+export function createExcelBlob(document: OCRDocument, numberDisplay: NumberDisplay, mode: "separate" | "single" | "smart" = "smart"): Blob {
   const plan: ExcelWorkbookPlan = buildExcelPlan(document, mode); const workbook = XLSX.utils.book_new();
   for (const worksheet of plan.worksheets) { const rows = worksheet.tables.flatMap(table => table.values.map(row => row.map(value => value == null ? "" : typeof value === "number" ? value : formatDigits(String(value), numberDisplay)))); const sheet = XLSX.utils.aoa_to_sheet(rows); XLSX.utils.book_append_sheet(workbook, sheet, worksheet.name.slice(0, 31)); }
-  const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }); const name = nextOutputFileName(document.fileName, "Excel", existing); download(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name); return name;
+  const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }); return new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+export function downloadExcel(document: OCRDocument, numberDisplay: NumberDisplay, mode: "separate" | "single" | "smart" = "smart", existing: string[] = []): string {
+  const name = nextOutputFileName(document.fileName, "Excel", existing); download(createExcelBlob(document, numberDisplay, mode), name); return name;
 }

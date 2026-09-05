@@ -18,6 +18,7 @@ import { uiCopy, uiDirection, type UiLocale } from "@shared/i18n";
 import { verifyDocument } from "@shared/verification";
 import { type BatchOutputMode, type BatchStatus } from "@shared/batch";
 import { type NawaSettings } from "@shared/settings";
+import { parseRibbonPanel } from "@shared/ribbon";
 import { BatchPanel } from "@/components/BatchPanel";
 import { SettingsPanel, loadNawaSettings } from "@/components/SettingsPanel";
 import { downloadExcel, downloadExcelBatch, downloadWord, downloadWordBatch } from "@/lib/export";
@@ -150,6 +151,9 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof Office !== "undefined") Office.onReady(() => { const nextHost = currentHost(); setHost(nextHost); if (nextHost === "Word" || nextHost === "Excel") setTarget(nextHost); });
+    const panel = parseRibbonPanel(new URLSearchParams(window.location.search).get("panel"));
+    if (panel === "settings") setShowSettings(true);
+    if (panel === "review") document.querySelector("[data-results]")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
   useEffect(() => { if (uiLocale !== settings.uiLocale) setSettings(current => { const next = { ...current, uiLocale }; window.localStorage.setItem("nawa-ocr-settings-v1", JSON.stringify(next)); return next; }); }, [uiLocale, settings.uiLocale]);
   useEffect(() => {
