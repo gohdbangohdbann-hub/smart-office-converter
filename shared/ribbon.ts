@@ -21,6 +21,11 @@ export function parseRibbonPanel(value: string | null | undefined): RibbonPanel 
   return null;
 }
 
+export function parseRibbonHost(value: string | null | undefined): OfficeRibbonHost | null {
+  if (value === "Word" || value === "Excel") return value;
+  return null;
+}
+
 export function ribbonPanelForHost(host: OfficeRibbonHost, panel: RibbonPanel): RibbonCommand {
   return ribbonCommands.find((command) => command.host === host && command.panel === panel)!;
 }

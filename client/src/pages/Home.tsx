@@ -18,7 +18,7 @@ import { uiCopy, uiDirection, type UiLocale } from "@shared/i18n";
 import { verifyDocument } from "@shared/verification";
 import { type BatchOutputMode, type BatchStatus } from "@shared/batch";
 import { type NawaSettings } from "@shared/settings";
-import { parseRibbonPanel } from "@shared/ribbon";
+import { parseRibbonHost, parseRibbonPanel } from "@shared/ribbon";
 import { BatchPanel } from "@/components/BatchPanel";
 import { SettingsPanel, loadNawaSettings } from "@/components/SettingsPanel";
 import { downloadExcel, downloadExcelBatch, downloadWord, downloadWordBatch } from "@/lib/export";
@@ -108,6 +108,7 @@ async function insertIntoOffice(document: OCRDocument, host: Host, excelMode: "s
 }
 
 export default function Home() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<OCRDocument | null>(null);
   const [host, setHost] = useState<Host>(currentHost);
@@ -116,7 +117,7 @@ export default function Home() {
   const [settings, setSettings] = useState<NawaSettings>(() => loadNawaSettings());
   const [showSettings, setShowSettings] = useState(false);
   const [showBatch, setShowBatch] = useState(false);
-  const [target, setTarget] = useState<"Word" | "Excel">(() => currentHost() === "Excel" ? "Excel" : "Word");
+  const [target, setTarget] = useState<"Word" | "Excel">(() => parseRibbonHost(new URLSearchParams(window.location.search).get("host")) ?? (currentHost() === "Excel" ? "Excel" : "Word"));
   const [targetMode, setTargetMode] = useState<"auto" | "manual">("auto");
   const batchDocuments = useRef<OCRDocument[]>([]);
   const copy = uiCopy[uiLocale];
@@ -151,9 +152,13 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof Office !== "undefined") Office.onReady(() => { const nextHost = currentHost(); setHost(nextHost); if (nextHost === "Word" || nextHost === "Excel") setTarget(nextHost); });
-    const panel = parseRibbonPanel(new URLSearchParams(window.location.search).get("panel"));
+    const params = new URLSearchParams(window.location.search);
+    const panel = parseRibbonPanel(params.get("panel"));
+    const ribbonHost = parseRibbonHost(params.get("host"));
+    if (ribbonHost) { setTarget(ribbonHost); setTargetMode("manual"); }
     if (panel === "settings") setShowSettings(true);
     if (panel === "review") document.querySelector("[data-results]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (panel === "import") window.setTimeout(() => fileInputRef.current?.click(), 180);
   }, []);
   useEffect(() => { if (uiLocale !== settings.uiLocale) setSettings(current => { const next = { ...current, uiLocale }; window.localStorage.setItem("nawa-ocr-settings-v1", JSON.stringify(next)); return next; }); }, [uiLocale, settings.uiLocale]);
   useEffect(() => {
@@ -210,7 +215,7 @@ export default function Home() {
       {showBatch && <section className="pb-5"><BatchPanel destination={conversionTarget} onProcess={processBatchFile} onBatchComplete={completeBatch} onOpenResult={openBatchResult} /></section>}
       <section className="grid min-w-0 flex-1 gap-6 py-7 lg:grid-cols-[0.92fr_1.08fr]">
         <Card className="min-w-0 border-0 bg-white/90 shadow-[0_20px_60px_rgba(15,23,42,0.08)]"><CardHeader><div className="flex items-center justify-between"><div><CardTitle className="text-lg">{copy.start}</CardTitle><p className="mt-1 text-sm text-slate-500">PDF أو صورة — العربية أولًا</p></div><WandSparkles className="size-5 text-indigo-500" /></div></CardHeader><CardContent className="space-y-5">
-          <label className="group flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-indigo-200 bg-indigo-50/40 px-5 text-center transition hover:border-indigo-400 hover:bg-indigo-50"><input type="file" accept={supported} className="sr-only" onChange={(event) => { void handleFileChange(event.target.files?.[0] ?? null); }} /><FileUp className="mb-3 size-8 text-indigo-500 transition group-hover:-translate-y-1" /><span className="font-semibold text-slate-800">{file ? file.name : copy.upload}</span><span className="mt-2 text-xs text-slate-500">PDF · PNG · JPG · TIFF · WEBP</span>{file && <span className="mt-3 text-xs text-indigo-600">{file.type || "نوع غير معروف"} · {(file.size / 1024).toFixed(1)} KB</span>}</label>
+          <label className="group flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-indigo-200 bg-indigo-50/40 px-5 text-center transition hover:border-indigo-400 hover:bg-indigo-50"><input ref={fileInputRef} type="file" accept={supported} className="sr-only" onChange={(event) => { void handleFileChange(event.target.files?.[0] ?? null); }} /><FileUp className="mb-3 size-8 text-indigo-500 transition group-hover:-translate-y-1" /><span className="font-semibold text-slate-800">{file ? file.name : copy.upload}</span><span className="mt-2 text-xs text-slate-500">PDF · PNG · JPG · TIFF · WEBP</span>{file && <span className="mt-3 text-xs text-indigo-600">{file.type || "نوع غير معروف"} · {(file.size / 1024).toFixed(1)} KB</span>}</label>
           {smartSuggestion && <div className="mb-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-800">التحويل الذكي يقترح <strong>{smartSuggestion}</strong> بناءً على التحليل الأولي؛ يمكنك تغيير الوجهة يدويًا.</div>}<div className="mb-2 grid grid-cols-2 gap-2"><Button type="button" variant="outline" className={target === "Word" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => { setTarget("Word"); setTargetMode("manual"); }}>Word</Button><Button type="button" variant="outline" className={target === "Excel" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => { setTarget("Excel"); setTargetMode("manual"); }}>Excel</Button></div><div className="grid grid-cols-3 gap-2"><Button type="button" variant="outline" className={operation === "pdf" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setOperation("pdf")}>{conversionTarget === "Excel" ? copy.pdfExcel : copy.pdfWord}</Button><Button type="button" variant="outline" className={operation === "image" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setOperation("image")}>{conversionTarget === "Excel" ? copy.imageExcel : copy.imageWord}</Button><Button type="button" variant="outline" className={operation === "smart" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => { setOperation("smart"); setTargetMode("auto"); }}>{conversionTarget === "Excel" ? copy.smartExcel : copy.smartWord}</Button></div>{conversionTarget === "Excel" && <div className="rounded-xl bg-slate-50 p-2"><p className="mb-2 text-xs font-medium text-slate-600">توزيع الجداول</p><div className="grid grid-cols-3 gap-1"><Button type="button" variant="outline" className={excelMode === "separate" ? "bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setExcelMode("separate")}>{copy.sheetPerTable}</Button><Button type="button" variant="outline" className={excelMode === "single" ? "bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setExcelMode("single")}>{copy.oneSheet}</Button><Button type="button" variant="outline" className={excelMode === "smart" ? "bg-indigo-50 text-indigo-700" : "bg-white"} onClick={() => setExcelMode("smart")}>{copy.smart}</Button></div></div>}<div><div className="mb-2 flex items-center justify-between text-sm"><span className="font-medium">{copy.language}</span><span className="text-slate-500">{language === "auto" ? "تلقائي" : language}</span></div><Tabs value={language} onValueChange={setLanguage}><TabsList className="grid w-full grid-cols-4 bg-slate-100"><TabsTrigger value="auto">تلقائي</TabsTrigger><TabsTrigger value="ar">العربية</TabsTrigger><TabsTrigger value="fr">Français</TabsTrigger><TabsTrigger value="en">English</TabsTrigger></TabsList></Tabs></div>
           <Button type="button" variant="outline" className="h-10 w-full" onClick={() => setShowBatch(current => !current)}><Files className="ml-2 size-4" /> تحويل عدة ملفات</Button><Button className="h-12 w-full rounded-xl bg-slate-950 text-base hover:bg-indigo-700" onClick={handleProcess} disabled={!file || isConverting}>{isConverting ? <><Loader2 className="ml-2 size-4 animate-spin" /> {conversionTarget === "Excel" ? copy.processingExcel : copy.processingWord}</> : <><WandSparkles className="ml-2 size-4" /> {conversionTarget === "Excel" ? copy.smartExcel : copy.smartWord}</>}</Button>
           <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-600">{status}{isConverting && <><Progress value={wordProgress.percent} className="mt-2 h-1.5" /><span className="mt-1 block text-xs text-indigo-600">{wordProgress.percent}% · الصفحة {wordProgress.currentPage || 1} من {wordProgress.totalPages || metadata?.pageCount || 1}</span></>}{metadata && <span className="mr-2 text-xs text-slate-400">· {metadata.pageCount} صفحة · {metadata.tableCount} جدول مبدئي · {metadata.sourceKind} · اللغة المكتشفة: {metadata.detectedLanguage}</span>}{result && <span className="mr-2 text-xs text-slate-400">· اللغة النهائية: {result.language}</span>}</div><p className="flex items-center gap-2 text-xs leading-5 text-slate-500"><ShieldCheck className="size-4 shrink-0 text-emerald-600" /> {copy.privacy}</p>
