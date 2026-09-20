@@ -9,10 +9,26 @@ import type { OCRDocument } from "@shared/ocr";
 function download(blob: Blob, name: string): void {
   const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
-function tableFromRows(rows: string[][], numberDisplay: NumberDisplay): Table { return new Table({ rows: rows.map(row => new TableRow({ children: row.map(cell => new TableCell({ children: [new Paragraph(formatDigits(cell, numberDisplay))] })) })) }); }
+function tableFromRows(rows: string[][], headerRows: number, direction: "rtl" | "ltr", numberDisplay: NumberDisplay): Table {
+  return new Table({
+    rows: rows.map((row, rowIndex) => new TableRow({
+      children: row.map((cell) => new TableCell({
+        children: [new Paragraph({
+          children: [new TextRun({ text: formatDigits(cell, numberDisplay), bold: rowIndex < headerRows })],
+          alignment: direction === "rtl" ? AlignmentType.RIGHT : AlignmentType.LEFT,
+          bidirectional: direction === "rtl",
+        })],
+      })),
+    })),
+  });
+}
+function paragraphFromPlan(paragraph: WordDocumentPlan["pages"][number]["paragraphs"][number], numberDisplay: NumberDisplay, pageBreakBefore = false): Paragraph {
+  const heading = paragraph.style === "title" ? HeadingLevel.TITLE : paragraph.style === "heading1" ? HeadingLevel.HEADING_1 : paragraph.style === "heading2" ? HeadingLevel.HEADING_2 : undefined;
+  return new Paragraph({ children: [new TextRun({ text: formatDigits(paragraph.text, numberDisplay), bold: paragraph.bold, italics: paragraph.italic })], alignment: paragraph.direction === "rtl" ? AlignmentType.RIGHT : AlignmentType.LEFT, bidirectional: paragraph.direction === "rtl", heading, pageBreakBefore, keepNext: paragraph.keepWithNext, spacing: { before: paragraph.spacingBefore, after: paragraph.spacingAfter, line: 276 }, indent: paragraph.indentLevel ? { left: paragraph.indentLevel * 360, right: paragraph.direction === "rtl" ? paragraph.indentLevel * 360 : undefined } : undefined });
+}
 export async function createWordBlob(document: OCRDocument, numberDisplay: NumberDisplay): Promise<Blob> {
   const plan: WordDocumentPlan = buildWordPlan(document); const children: Array<Paragraph | Table> = [];
-  for (const page of plan.pages) { for (const paragraph of [...page.header, ...page.paragraphs, ...page.footer]) children.push(new Paragraph({ children: [new TextRun({ text: formatDigits(paragraph.text, numberDisplay), bold: paragraph.bold })], alignment: paragraph.direction === "rtl" ? AlignmentType.RIGHT : AlignmentType.LEFT, heading: paragraph.kind === "heading" ? HeadingLevel.HEADING_1 : undefined, bidirectional: paragraph.direction === "rtl" })); for (const table of page.tables) children.push(tableFromRows(table.rows, numberDisplay)); }
+  for (let pageIndex = 0; pageIndex < plan.pages.length; pageIndex += 1) { const page = plan.pages[pageIndex]!; for (const paragraph of page.header) children.push(paragraphFromPlan(paragraph, numberDisplay, pageIndex > 0)); for (const paragraph of page.paragraphs) children.push(paragraphFromPlan(paragraph, numberDisplay, pageIndex > 0 && page.paragraphs[0] === paragraph)); for (const table of page.tables) children.push(tableFromRows(table.rows, table.headerRows, table.direction, numberDisplay)); for (const paragraph of page.footer) children.push(paragraphFromPlan(paragraph, numberDisplay)); }
   return Packer.toBlob(new Document({ sections: [{ children }] }));
 }
 
