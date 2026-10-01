@@ -1,6 +1,6 @@
 ; Compile with Inno Setup on Windows: ISCC.exe Nawa-OCR-Office-Setup.iss
 #define MyAppName "Nawa OCR Office"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Nawa"
 #define MyAppExeName "Nawa-OCR-Office-Setup.ps1"
 
@@ -13,6 +13,8 @@ DefaultDirName={localappdata}\NawaOCROffice
 DisableProgramGroupPage=yes
 OutputDir=output
 OutputBaseFilename=Nawa-OCR-Office-Setup
+ArchitecturesInstallIn64BitMode=x64compatible
+Uninstallable=no
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=lowest

@@ -1,0 +1,34 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "manifest.xml"
+      - "installer/**"
+      - ".github/workflows/windows-installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Compile Inno Setup installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { throw "Inno Setup compiler was not found at $iscc" }
+          New-Item -ItemType Directory -Force -Path installer\output | Out-Null
+          & $iscc "installer\Nawa-OCR-Office-Setup.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem installer\output
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nawa-OCR-Office-Windows-Installer
+          path: installer/output/Nawa-OCR-Office-Setup.exe
+          if-no-files-found: error
