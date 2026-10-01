@@ -26,8 +26,8 @@ Source: "Nawa-OCR-Office-Setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "INSTALL-WINDOWS-AR.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autodesktop}\Nawa OCR Office"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File \"{app}\Nawa-OCR-Office-Setup.ps1\""; WorkingDir: "{app}"
-Name: "{group}\Nawa OCR Office Setup"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File \"{app}\Nawa-OCR-Office-Setup.ps1\""; WorkingDir: "{app}"
+Name: "{autodesktop}\Nawa OCR Office"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Nawa-OCR-Office-Setup.ps1"""; WorkingDir: "{app}"
+Name: "{group}\Nawa OCR Office Setup"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Nawa-OCR-Office-Setup.ps1"""; WorkingDir: "{app}"
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File \"{app}\Nawa-OCR-Office-Setup.ps1\""; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Nawa-OCR-Office-Setup.ps1"""; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent
